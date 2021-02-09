@@ -1,0 +1,78 @@
+#!/usr/bin/perl -w
+
+# setmp3tags
+#
+# Suppose you have a directory tree like this:
+#
+#    Artist/
+#       Album/
+#          01. Title1.mp3
+#          02. Title2.mp3
+#
+# If you run setmp3tags Artist/Album/*.mp3, it will set the mp3 id3v2 artist,
+# album, title, and track fields. If you pass a path to an image with the -i
+# flag, it will also set the artwork.
+
+use strict;
+use Getopt::Std;
+use File::Slurp qw(read_file);
+use MP3::Tag;
+
+use vars qw($opt_v $opt_n $opt_i);
+
+getopts("vni:");
+
+my $verbose = $opt_v || $opt_n;
+my $execute = ! $opt_n;
+
+my $usage = "usage: $0 [-v] [-n] [-i <image>] file1 file2 ... fileN\n";
+my $image = "";
+
+if ($opt_i) {
+  $image = read_file($opt_i, { binmode => ":raw" })
+}
+
+my (@path, $title, $track, $album, $artist);
+foreach (@ARGV) {
+  /\.mp3$/ || die "setmp3info ERROR: not an mp3 file: $_\n";
+  @path = split(/\//o);
+  @path >= 2 || die "setmp3info ERROR: no album parent directory for file: $_\n";
+  @path >= 3 || die "setmp3info ERROR: no artist parent directory for file: $_\n";
+}
+
+foreach (@ARGV) {
+  @path = split(/\//o);
+  $title = pop(@path);
+  $title =~ s/\.mp3$//;
+  $title =~ s/^(\d+)\s*\D\s*//;
+  $track = $1;
+  $album = pop(@path);
+  $artist = pop(@path);
+  if ($verbose) {
+     printf "file %s:\n", $_;
+     printf "  artist=%s;\n", $artist; 
+     printf "  album=%s;\n", $album; 
+     printf "  tracknum=%s;\n", $track; 
+     printf "  title=%s;\n", $title; 
+  }
+  if ($execute) {
+    if (! set_mp3tag($_, $title, $artist, $album, "", "", "", $track)) {
+      warn "setmp3info WARNING: set_mp3tag failed: $_: $@\n"
+    }
+  }
+}
+
+
+sub set_mp3tag {
+  my ($file, $title, $artist, $album, $junk1, $junk2, $junk3, $track) = @_;
+  my $mp3 = MP3::Tag->new($file);
+  my $id3v2 = $mp3->new_tag("ID3v2");
+  $id3v2->title($title);
+  $id3v2->artist($artist);
+  $id3v2->album($album);
+  $id3v2->track($track);
+  $id3v2->write_tag();
+  if ($image ne "") {
+    my $new_frame = $id3v2->frame_select('APIC', '', undef, $image);
+  }
+}
